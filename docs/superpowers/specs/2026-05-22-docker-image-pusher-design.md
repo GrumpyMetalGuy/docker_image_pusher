@@ -34,6 +34,10 @@ same tool works across every project without per-project configuration.
   hand. It is idempotent — safe to re-run after pulling updates.
 - **Versioning:** Semantic versioning `MAJOR.MINOR.PATCH`. Bump levels map as:
   `major` → `(M+1).0.0`, `minor` → `M.(N+1).0`, `revision` → `M.N.(P+1)`.
+- **Bootstrap on missing `VERSION.txt`:** rather than erroring, the tool prompts for
+  the image name and a starting version (default `0.1.0`) and creates the file. On this
+  first run the entered version is built/pushed as-is (no bump); the file is written
+  only after a successful push.
 - **Auth:** Assumes the user has already run `docker login`. No credentials are
   stored or handled by the tool.
 
@@ -137,25 +141,43 @@ or `1.7` and automatically pick up bugfix releases.
 
 Run `dip` from a project folder:
 
-1. **Read `./VERSION.txt`** → `image_name` (line 1), `version` (line 2). Validate it
-   parses as semver `MAJOR.MINOR.PATCH`.
+1. **Locate `./VERSION.txt`:**
+   - **Present (normal run):** read → `image_name` (line 1), `version` (line 2);
+     validate it parses as semver `MAJOR.MINOR.PATCH`.
+   - **Missing (bootstrap run):** prompt to create it.
+     - Prompt for the **image name** (required, non-empty).
+     - Prompt for the **starting version**, default `0.1.0` (press enter to accept),
+       semver-validated. The prompt wording must make explicit that the entered value
+       **is the version this new image will be built and pushed as** — it is *not*
+       bumped on this run.
+     - Hold these values in memory and mark the run as a bootstrap run. The file
+       itself is written at step 8 (after a successful push), so a declined
+       confirmation or failed build never leaves a stale `VERSION.txt` behind.
 2. **Read config** at `$XDG_CONFIG_HOME/docker_image_pusher/config.yaml`
    (fallback `~/.config/...`) → require `registry` key.
-3. **Prompt for bump level**: `major` / `minor` / `revision`. Compute the new version.
-4. **Compute tags** for the new version → four full refs (see Tagging scheme).
+3. **Determine the version to release:**
+   - **Normal run:** prompt for bump level (`major` / `minor` / `revision`) and
+     compute the new version.
+   - **Bootstrap run:** skip the bump prompt entirely; use the just-entered starting
+     version as-is.
+4. **Compute tags** for the resolved version → four full refs (see Tagging scheme).
 5. **Confirmation**: print the four refs and the build context (CWD), prompt `y/n`.
    Abort with no docker calls if declined.
 6. **Build**: `docker build -t <registry/image:NEW> .`, then `docker tag` the built
    image to the other three refs.
 7. **Push**: `docker push` each of the four refs in turn.
-8. **Write-back**: only after **all** pushes succeed, write the new version back to
-   `./VERSION.txt` (preserving the image-name line). A failure anywhere before this
-   leaves `VERSION.txt` unchanged so the run can be retried cleanly.
+8. **Write-back**: only after **all** pushes succeed, write the resolved version to
+   `./VERSION.txt` (preserving / setting the image-name line). On a normal run this
+   advances the version; on a bootstrap run this **creates** the file with the entered
+   image name and version. A failure anywhere before this leaves the filesystem
+   unchanged (no file created on bootstrap), so the run can be retried cleanly.
 
 ## Components (functions in `pusher.py`)
 
 Pure / testable:
 
+- `parse_version(s: str) -> Version` — validate/parse a semver string (reused by
+  `read_version` and the bootstrap version prompt).
 - `read_version(path) -> (name: str, version: Version)` — parse and validate.
 - `bump(version: Version, level: str) -> Version` — pure semver bump.
 - `tag_list(version: Version) -> list[str]` — e.g. `["1.7.3", "1.7", "1", "latest"]`.
@@ -172,13 +194,21 @@ Side-effecting (thin `subprocess` wrappers around the `docker` CLI):
 
 Orchestration:
 
-- `main()` — wires the flow, prompts, confirmation, ordering, exit codes.
+- `bootstrap_version() -> (name, Version)` — interactive prompt for image name +
+  starting version (default `0.1.0`, re-prompts on invalid semver) when `VERSION.txt`
+  is absent. Wording makes clear the entered version is what gets built/pushed.
+- `main()` — wires the flow, prompts, confirmation, ordering, exit codes; chooses the
+  normal vs. bootstrap path based on whether `VERSION.txt` exists.
 
 ## Error handling
 
-- Missing `./VERSION.txt`, missing `./Dockerfile`, missing config file, missing
-  `registry` key, or a non-semver version string → clear human-readable message,
-  exit non-zero, **no docker commands run**.
+- Missing `./VERSION.txt` is **not** an error — it triggers the interactive bootstrap
+  (step 1) that prompts for image name + starting version and creates the file after a
+  successful push.
+- Missing `./Dockerfile`, missing config file, missing `registry` key, or a non-semver
+  version string (in an existing `VERSION.txt`, or entered at the bootstrap prompt) →
+  clear human-readable message, exit non-zero, **no docker commands run**. At the
+  bootstrap prompt an invalid version re-prompts rather than aborting.
 - Any `docker build` / `tag` / `push` failure → surface docker's stderr, exit
   non-zero, **`VERSION.txt` left unchanged**.
 - Push authentication failures surface docker's own error (the tool assumes an
@@ -193,7 +223,8 @@ Per project testing standards, both unit and integration coverage from the start
 - **Unit (pure logic, no docker):**
   - `bump` for each level, including rollovers (`1.7.9` + revision, `1.9.0` + minor).
   - `tag_list` produces exactly the four expected tags in order.
-  - `read_version` for valid input, missing file, malformed lines, non-semver.
+  - `parse_version` accepts valid semver and rejects non-semver / wrong arity.
+  - `read_version` for valid input, malformed lines, non-semver.
   - `load_registry` for present key, missing key, missing file.
   - `write_version` round-trips and preserves the image-name line.
 - **Integration (docker mocked):**
@@ -202,6 +233,10 @@ Per project testing standards, both unit and integration coverage from the start
   - Assert write-back happens **only** after all four pushes succeed (simulate a
     push failure → `VERSION.txt` unchanged, non-zero exit).
   - Confirmation declined → no docker invocations.
+  - **Bootstrap path:** with no `VERSION.txt`, simulated prompts (image name + version)
+    feed the build; assert the entered version is used **without** a bump, the file is
+    created only after a successful push, and a failed/declined run leaves **no**
+    `VERSION.txt` on disk.
   - Keep CI-runnable: mock the `subprocess`/`docker` boundary, no real registry.
 - **Installer:** verify `install.sh` by running it in a temp `$HOME`/`$XDG_CONFIG_HOME`
   sandbox — asserts the symlink is created/refreshed, the config is scaffolded only
