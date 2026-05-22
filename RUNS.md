@@ -21,7 +21,9 @@ README. Two-stage review (spec compliance + code quality) after each chunk.
 - Tooling present: uv 0.9.26, docker CLI. Tests run via `uv run --with pyyaml --with pytest pytest`.
 
 ## Summary
-(to be completed before final commit)
+Full brainstorm → spec → plan → subagent-driven implementation of `dip`. Delivered
+`pusher.py`, `install.sh`, `test_pusher.py`, `test_install.py`, and `README.md` on
+`feat/dip-implementation`. 63 tests passing. See Run 0005 for the wrap-up.
 
 ---
 
@@ -96,3 +98,38 @@ Implement Tasks 9, 10, and 11 from the plan verbatim using strict TDD:
 
 ## Summary
 Tasks 9-11 implemented via strict TDD. Three commits added. Full suite grows from 40 to 47 tests, all passing. One genuine bug surfaced: `ask=input` default arg binding issue required `main()` to pass `ask=input` explicitly. No other deviations from plan.
+
+---
+
+# Run 0005
+
+## First Impressions
+Tasks 1-11 implemented (47 tests). User questioned why tests monkeypatch — wanted a
+simple CLI. Remaining: installer (12-13), README (14), reviews, branch finish.
+
+## Plan
+Address the monkeypatch concern, finish the installer + README chunks, run the
+two-stage reviews per chunk plus a final whole-implementation review, then complete
+the branch.
+
+## Work Log
+- Refactored to dependency injection: `main(ask=input)` threaded to the prompt helpers,
+  removing all `builtins.input` patching (supersedes the Run 0004 `ask=input` workaround).
+  Only `_run` (the docker boundary) is now mocked.
+- Chunk 4 review fixes: build-failure test, deduped `scripted()` helper, reuse `tags`.
+- Chunk 5: `install.sh` + `test_install.py` (sandboxed). Review fixes: robust
+  `BASH_SOURCE` script-dir resolution, bare-invocation + clobber-guard tests, trimmed
+  COREUTILS (verified `bash` is needed because subprocess resolves via env PATH).
+- Chunk 6: README; final whole-impl review (Opus) → ready to merge.
+- Polish: clean Ctrl-C/Ctrl-D abort (exit 130), `.gitignore`.
+
+## Discoveries
+- `subprocess.run(..., env=E)` resolves the executable via `E["PATH"]`, not the parent's
+  PATH — confirmed empirically. So sandboxed installer tests must symlink `bash` itself.
+- Dependency injection (`main(ask=...)`) is cleaner than `builtins.input` patching and
+  eliminated the def-time default-binding gotcha entirely.
+
+## Summary
+`dip` is complete on `feat/dip-implementation`: 56 pusher tests + 7 installer tests = 63
+passing. Spec fully delivered; final review approved with only optional polish, which was
+applied. Ready to merge.
