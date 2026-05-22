@@ -40,3 +40,22 @@ def test_bump_revision():
 def test_bump_unknown_level():
     with pytest.raises(ValueError):
         bump(Version(1, 0, 0), "patch")
+
+
+from pusher import image_refs, tag_list
+
+
+def test_tag_list_order_and_values():
+    assert tag_list(Version(1, 7, 3)) == ["1.7.3", "1.7", "1", "latest"]
+
+
+def test_tag_list_zero_version():
+    assert tag_list(Version(0, 1, 0)) == ["0.1.0", "0.1", "0", "latest"]
+
+
+def test_image_refs_prefixes_registry_and_name():
+    refs = image_refs("registry.example.com/org", "app", ["1.7.3", "latest"])
+    assert refs == [
+        "registry.example.com/org/app:1.7.3",
+        "registry.example.com/org/app:latest",
+    ]

@@ -48,6 +48,14 @@ def bump(version: Version, level: str) -> Version:
     raise ValueError(f"Unknown bump level: {level!r}")
 
 
+def tag_list(version: Version) -> list[str]:
+    return [str(version), f"{version.major}.{version.minor}", f"{version.major}", "latest"]
+
+
+def image_refs(registry: str, name: str, tags: list[str]) -> list[str]:
+    return [f"{registry}/{name}:{tag}" for tag in tags]
+
+
 def main() -> int:
     raise NotImplementedError
 
