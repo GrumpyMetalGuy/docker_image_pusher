@@ -82,6 +82,10 @@ def load_registry(path: Path) -> str:
     return registry.strip()
 
 
+def write_version(path: Path, name: str, version: Version) -> None:
+    path.write_text(f"{name}\n{version}\n")
+
+
 def main() -> int:
     raise NotImplementedError
 

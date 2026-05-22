@@ -124,3 +124,24 @@ def test_load_registry_missing_key(tmp_path):
     f.write_text("something_else: 1\n")
     with pytest.raises(ValueError):
         load_registry(f)
+
+
+from pusher import write_version
+
+
+def test_write_version_roundtrips(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    write_version(f, "my-image", Version(2, 0, 0))
+    assert f.read_text() == "my-image\n2.0.0\n"
+    # round-trips back through read_version
+    name, version = read_version(f)
+    assert name == "my-image"
+    assert version == Version(2, 0, 0)
+
+
+def test_write_version_creates_missing_file(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    assert not f.exists()
+    write_version(f, "fresh", Version(0, 1, 0))
+    assert f.exists()
+    assert f.read_text() == "fresh\n0.1.0\n"
