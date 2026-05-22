@@ -361,6 +361,25 @@ def test_main_push_failure_leaves_version_unchanged(monkeypatch, tmp_path):
     assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # NOT bumped
 
 
+def test_main_aborts_cleanly_on_interrupt(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+
+    def interrupt(_prompt):
+        raise EOFError
+
+    assert pusher_mod.main(ask=interrupt) == 130
+    assert calls == []  # nothing built or pushed
+    assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # unchanged
+
+
 def test_main_build_failure_leaves_version_unchanged(monkeypatch, tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()

@@ -175,6 +175,9 @@ def main(ask=input) -> int:
     except subprocess.CalledProcessError as exc:
         print(f"error: docker command failed (exit {exc.returncode})", file=sys.stderr)
         return 1
+    except (KeyboardInterrupt, EOFError):
+        print("\nAborted.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
