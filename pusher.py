@@ -15,6 +15,11 @@ from typing import NamedTuple
 
 import yaml
 
+VERSION_FILE_HEADER = (
+    "# Created and managed by DIP (Docker Image Pusher).\n"
+    "# https://github.com/GrumpyMetalGuy/docker_image_pusher\n"
+)
+
 
 class Version(NamedTuple):
     major: int
@@ -62,7 +67,11 @@ def image_refs(registry: str, name: str, tags: list[str]) -> list[str]:
 
 
 def read_version(path: Path) -> tuple[str, Version]:
-    lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    lines = [
+        stripped
+        for line in path.read_text().splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    ]
     if len(lines) < 2:
         raise ValueError(
             f"{path} must have the image name on line 1 and a semver on line 2"
@@ -88,7 +97,7 @@ def load_registry(path: Path) -> str:
 
 
 def write_version(path: Path, name: str, version: Version) -> None:
-    path.write_text(f"{name}\n{version}\n")
+    path.write_text(f"{VERSION_FILE_HEADER}{name}\n{version}\n")
 
 
 def _run(cmd: list[str]) -> None:

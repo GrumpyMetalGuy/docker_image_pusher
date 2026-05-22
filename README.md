@@ -27,10 +27,21 @@ From any project folder containing a `Dockerfile`:
 dip
 ```
 
-- If `VERSION.txt` exists (line 1 = image name, line 2 = `MAJOR.MINOR.PATCH`), you are
-  prompted for a bump level (major / minor / revision).
+- If `VERSION.txt` exists (image name then `MAJOR.MINOR.PATCH`, each on its own line;
+  `#` comment lines are ignored), you are prompted for a bump level
+  (major / minor / revision).
 - If `VERSION.txt` is missing, you are prompted for an image name and starting version
   (default `0.1.0`); that version is built and pushed as-is and the file is created.
+
+`dip` writes (and rewrites) `VERSION.txt` with a short comment header identifying the
+tool, e.g.:
+
+```
+# Created and managed by DIP (Docker Image Pusher).
+# https://github.com/GrumpyMetalGuy/docker_image_pusher
+my-image
+1.7.3
+```
 
 `dip` then shows the tags it will push, asks for confirmation, builds, pushes
 `X.Y.Z` / `X.Y` / `X` / `latest`, and (on success) writes the new version back to

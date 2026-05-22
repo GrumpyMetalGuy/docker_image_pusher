@@ -99,6 +99,19 @@ def test_read_version_non_semver(tmp_path):
         read_version(f)
 
 
+def test_read_version_skips_comment_lines(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    f.write_text(
+        "# Created and managed by DIP (Docker Image Pusher).\n"
+        "# https://github.com/GrumpyMetalGuy/docker_image_pusher\n"
+        "my-image\n"
+        "1.7.3\n"
+    )
+    name, version = read_version(f)
+    assert name == "my-image"
+    assert version == Version(1, 7, 3)
+
+
 from pusher import config_path, load_registry
 
 
@@ -145,17 +158,25 @@ def test_load_registry_whitespace_only_value(tmp_path):
         load_registry(f)
 
 
-from pusher import write_version
+from pusher import VERSION_FILE_HEADER, write_version
 
 
 def test_write_version_roundtrips(tmp_path):
     f = tmp_path / "VERSION.txt"
     write_version(f, "my-image", Version(2, 0, 0))
-    assert f.read_text() == "my-image\n2.0.0\n"
+    assert f.read_text() == f"{VERSION_FILE_HEADER}my-image\n2.0.0\n"
     # round-trips back through read_version
     name, version = read_version(f)
     assert name == "my-image"
     assert version == Version(2, 0, 0)
+
+
+def test_write_version_includes_repo_reference(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    write_version(f, "my-image", Version(1, 0, 0))
+    text = f.read_text()
+    assert text.startswith("#")
+    assert "github.com/GrumpyMetalGuy/docker_image_pusher" in text
 
 
 def test_write_version_creates_missing_file(tmp_path):
@@ -163,7 +184,7 @@ def test_write_version_creates_missing_file(tmp_path):
     assert not f.exists()
     write_version(f, "fresh", Version(0, 1, 0))
     assert f.exists()
-    assert f.read_text() == "fresh\n0.1.0\n"
+    assert f.read_text() == f"{VERSION_FILE_HEADER}fresh\n0.1.0\n"
 
 
 import pusher as pusher_mod
@@ -272,7 +293,7 @@ def test_main_normal_run_builds_tags_pushes_and_writes_back(monkeypatch, tmp_pat
         ["docker", "push", f"{base}:1"],
         ["docker", "push", f"{base}:latest"],
     ]
-    assert (proj / "VERSION.txt").read_text() == "app\n1.7.3\n"
+    assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}app\n1.7.3\n"
 
 
 def test_main_missing_dockerfile_errors_before_docker(monkeypatch, tmp_path):
@@ -323,7 +344,7 @@ def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
     assert calls[0] == ["docker", "build", "-t", f"{base}:0.1.0", "."]
     assert ["docker", "push", f"{base}:0.1.0"] in calls
     assert ["docker", "push", f"{base}:latest"] in calls
-    assert (proj / "VERSION.txt").read_text() == "newapp\n0.1.0\n"
+    assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}newapp\n0.1.0\n"
 
 
 def test_main_decline_confirmation_does_nothing(monkeypatch, tmp_path):
