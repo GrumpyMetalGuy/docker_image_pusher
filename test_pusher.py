@@ -207,7 +207,7 @@ def test_prompt_bump_level_reprompts_on_invalid():
     assert prompt_bump_level(ask=scripted(["patch", "", "major"])) == "major"
 
 
-def test_bootstrap_version_uses_default(capsys):
+def test_bootstrap_version_uses_default():
     name, version = bootstrap_version(ask=scripted(["my-image", ""]))
     assert name == "my-image"
     assert version == Version(0, 1, 0)
@@ -226,6 +226,10 @@ def test_bootstrap_version_reprompts_empty_name_and_bad_version():
 
 def test_confirm_yes():
     assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted(["y"])) is True
+
+
+def test_confirm_accepts_long_form_yes():
+    assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted(["yes"])) is True
 
 
 def test_confirm_no_default():
