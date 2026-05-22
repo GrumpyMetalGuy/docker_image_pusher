@@ -18,7 +18,9 @@ def test_parse_version_strips_whitespace():
     assert parse_version("  2.3.4  ") == Version(2, 3, 4)
 
 
-@pytest.mark.parametrize("bad", ["1.2", "1.2.3.4", "1.2.x", "abc", "", "1..3", "-1.0.0"])
+@pytest.mark.parametrize(
+    "bad", ["1.2", "1.2.3.4", "1.2.x", "abc", "", "1..3", "-1.0.0"]
+)
 def test_parse_version_rejects_invalid(bad):
     with pytest.raises(ValueError):
         parse_version(bad)
@@ -234,3 +236,76 @@ def test_confirm_accepts_long_form_yes():
 
 def test_confirm_no_default():
     assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted([""])) is False
+
+
+def _make_input(answers):
+    it = iter(answers)
+    return lambda _prompt: next(it)
+
+
+def _setup_config(monkeypatch, tmp_path, registry="reg.example.com/org"):
+    cfg_home = tmp_path / "xdg"
+    cfg = cfg_home / "docker_image_pusher" / "config.yaml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(f"registry: {registry}\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
+
+
+def test_main_normal_run_builds_tags_pushes_and_writes_back(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.7.2\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+    # bump level = revision, then confirm = y
+    monkeypatch.setattr("builtins.input", _make_input(["revision", "y"]))
+
+    assert pusher_mod.main() == 0
+
+    base = "reg.example.com/org/app"
+    assert calls == [
+        ["docker", "build", "-t", f"{base}:1.7.3", "."],
+        ["docker", "tag", f"{base}:1.7.3", f"{base}:1.7"],
+        ["docker", "tag", f"{base}:1.7.3", f"{base}:1"],
+        ["docker", "tag", f"{base}:1.7.3", f"{base}:latest"],
+        ["docker", "push", f"{base}:1.7.3"],
+        ["docker", "push", f"{base}:1.7"],
+        ["docker", "push", f"{base}:1"],
+        ["docker", "push", f"{base}:latest"],
+    ]
+    assert (proj / "VERSION.txt").read_text() == "app\n1.7.3\n"
+
+
+def test_main_missing_dockerfile_errors_before_docker(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+    monkeypatch.setattr("builtins.input", _make_input([]))
+
+    assert pusher_mod.main() == 1
+    assert calls == []
+
+
+def test_main_missing_config_errors_before_docker(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+    monkeypatch.setattr("builtins.input", _make_input([]))
+
+    assert pusher_mod.main() == 1
+    assert calls == []

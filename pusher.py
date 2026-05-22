@@ -49,7 +49,12 @@ def bump(version: Version, level: str) -> Version:
 
 
 def tag_list(version: Version) -> list[str]:
-    return [str(version), f"{version.major}.{version.minor}", f"{version.major}", "latest"]
+    return [
+        str(version),
+        f"{version.major}.{version.minor}",
+        f"{version.major}",
+        "latest",
+    ]
 
 
 def image_refs(registry: str, name: str, tags: list[str]) -> list[str]:
@@ -135,7 +140,40 @@ def confirm(refs: list[str], context: Path, ask=input) -> bool:
 
 
 def main() -> int:
-    raise NotImplementedError
+    cwd = Path.cwd()
+    version_file = cwd / "VERSION.txt"
+    dockerfile = cwd / "Dockerfile"
+    try:
+        if not dockerfile.exists():
+            raise FileNotFoundError(f"No Dockerfile found in {cwd}")
+        registry = load_registry(config_path())
+
+        if version_file.exists():
+            name, current = read_version(version_file)
+            new_version = bump(current, prompt_bump_level(ask=input))
+        else:
+            name, new_version = bootstrap_version(ask=input)
+
+        refs = image_refs(registry, name, tag_list(new_version))
+        if not confirm(refs, cwd, ask=input):
+            print("Aborted.")
+            return 0
+
+        build_image(refs[0], ".")
+        for dst in refs[1:]:
+            tag_image(refs[0], dst)
+        for ref in refs:
+            push_image(ref)
+
+        write_version(version_file, name, new_version)
+        print(f"Pushed {name} {new_version}  ({', '.join(tag_list(new_version))})")
+        return 0
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as exc:
+        print(f"error: docker command failed (exit {exc.returncode})", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
