@@ -86,6 +86,22 @@ def write_version(path: Path, name: str, version: Version) -> None:
     path.write_text(f"{name}\n{version}\n")
 
 
+def _run(cmd: list[str]) -> None:
+    subprocess.run(cmd, check=True)
+
+
+def build_image(ref: str, context: str = ".") -> None:
+    _run(["docker", "build", "-t", ref, context])
+
+
+def tag_image(src: str, dst: str) -> None:
+    _run(["docker", "tag", src, dst])
+
+
+def push_image(ref: str) -> None:
+    _run(["docker", "push", ref])
+
+
 def main() -> int:
     raise NotImplementedError
 

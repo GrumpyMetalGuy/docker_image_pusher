@@ -159,3 +159,22 @@ def test_write_version_creates_missing_file(tmp_path):
     write_version(f, "fresh", Version(0, 1, 0))
     assert f.exists()
     assert f.read_text() == "fresh\n0.1.0\n"
+
+
+import pusher as pusher_mod
+from pusher import build_image, push_image, tag_image
+
+
+def test_docker_wrappers_build_correct_commands(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+
+    build_image("reg/app:1.0.0", ".")
+    tag_image("reg/app:1.0.0", "reg/app:latest")
+    push_image("reg/app:1.0.0")
+
+    assert calls == [
+        ["docker", "build", "-t", "reg/app:1.0.0", "."],
+        ["docker", "tag", "reg/app:1.0.0", "reg/app:latest"],
+        ["docker", "push", "reg/app:1.0.0"],
+    ]
