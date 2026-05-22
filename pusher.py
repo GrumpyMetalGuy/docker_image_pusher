@@ -56,6 +56,15 @@ def image_refs(registry: str, name: str, tags: list[str]) -> list[str]:
     return [f"{registry}/{name}:{tag}" for tag in tags]
 
 
+def read_version(path: Path) -> tuple[str, Version]:
+    lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise ValueError(
+            f"{path} must have the image name on line 1 and a semver on line 2"
+        )
+    return lines[0], parse_version(lines[1])
+
+
 def main() -> int:
     raise NotImplementedError
 

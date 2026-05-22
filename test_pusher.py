@@ -59,3 +59,36 @@ def test_image_refs_prefixes_registry_and_name():
         "registry.example.com/org/app:1.7.3",
         "registry.example.com/org/app:latest",
     ]
+
+
+from pusher import read_version
+
+
+def test_read_version_valid(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    f.write_text("my-image\n1.7.3\n")
+    name, version = read_version(f)
+    assert name == "my-image"
+    assert version == Version(1, 7, 3)
+
+
+def test_read_version_tolerates_blank_lines_and_whitespace(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    f.write_text("\n  my-image  \n\n 1.7.3 \n\n")
+    name, version = read_version(f)
+    assert name == "my-image"
+    assert version == Version(1, 7, 3)
+
+
+def test_read_version_missing_second_line(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    f.write_text("my-image\n")
+    with pytest.raises(ValueError):
+        read_version(f)
+
+
+def test_read_version_non_semver(tmp_path):
+    f = tmp_path / "VERSION.txt"
+    f.write_text("my-image\nnot-a-version\n")
+    with pytest.raises(ValueError):
+        read_version(f)
