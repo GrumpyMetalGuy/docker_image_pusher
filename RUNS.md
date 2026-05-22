@@ -70,3 +70,29 @@ Implement Task 7 (docker subprocess wrappers: `_run`, `build_image`, `tag_image`
 
 ## Summary
 Tasks 7 and 8 implemented verbatim per plan. Full suite grows from 30 to 40 tests (10 new: 1 docker wrappers + 9 prompt tests). All 40 pass. Two commits added.
+
+---
+
+# Run 0004
+
+## First Impressions
+40 tests pass. All helper functions through `confirm` are implemented. `main()` is a `NotImplementedError` stub. Ready to implement Tasks 9-11 (main orchestration).
+
+## Plan
+Implement Tasks 9, 10, and 11 from the plan verbatim using strict TDD:
+- Task 9: Replace `main()` stub with real orchestration + integration tests for normal run + fail-fast cases
+- Task 10: Integration test for bootstrap run (no VERSION.txt)
+- Task 11: Integration tests for declined confirmation and docker push failure cases
+
+## Work Log
+- Task 9: Appended integration tests (normal run + two fail-fast cases). Confirmed they failed with NotImplementedError. Replaced main() stub with real orchestration. Discovered a real bug: the plan's test patches `builtins.input` but `prompt_bump_level(ask=input)` binds the default at function-definition time, so patching builtins doesn't affect it. Fixed by making main() explicitly pass `ask=input` at call time so Python looks up `input` in builtins dynamically. 43 tests pass. Committed 99e6385.
+- Task 10: Appended bootstrap integration test. Passed immediately - main already routes to bootstrap_version when VERSION.txt absent. 44 tests pass. Committed d444f54.
+- Task 11: Appended decline-confirmation and push-failure tests (3 tests). All passed immediately - main's ordering (write-back only after all pushes succeed) already handles these. 47 tests pass. Committed 624181c.
+
+## Discoveries
+- Python default argument `ask=input` in function signatures binds the `input` reference at definition time. `monkeypatch.setattr("builtins.input", ...)` does NOT affect already-bound defaults. The fix is to have `main()` pass `ask=input` explicitly at call time, so Python resolves the name dynamically at that moment. This is a real semantic gotcha in the plan's design - worth documenting for future agents.
+- The `builtins.input` monkeypatch approach works cleanly once main passes `ask=input` explicitly.
+- Tasks 10 and 11 produced no implementation work - `main()`'s correct linear ordering (write-back only after all pushes) made all edge case tests pass immediately.
+
+## Summary
+Tasks 9-11 implemented via strict TDD. Three commits added. Full suite grows from 40 to 47 tests, all passing. One genuine bug surfaced: `ask=input` default arg binding issue required `main()` to pass `ask=input` explicitly. No other deviations from plan.
