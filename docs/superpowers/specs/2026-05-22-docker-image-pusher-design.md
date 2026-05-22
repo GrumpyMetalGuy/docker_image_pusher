@@ -88,10 +88,15 @@ A one-time, idempotent installer in the repo root. Run once after cloning:
 
 Behavior:
 
-0. **Preflight — require `uv`:** check `command -v uv`. If `uv` is not on `$PATH`,
-   abort immediately (before any symlink/config changes) with a clear message and the
-   install pointer (`https://docs.astral.sh/uv/` / `curl -LsSf https://astral.sh/uv/install.sh | sh`).
-   `uv` is mandatory because the tool runs via the `uv run --script` shebang.
+0. **Preflight — dependency checks:**
+   - **`uv` (required):** check `command -v uv`. If `uv` is not on `$PATH`, abort
+     immediately (before any symlink/config changes) with a clear message and the
+     install pointer (`https://docs.astral.sh/uv/` /
+     `curl -LsSf https://astral.sh/uv/install.sh | sh`). `uv` is mandatory because the
+     tool runs via the `uv run --script` shebang.
+   - **`docker` (warn-only):** check `command -v docker`. If absent, print a warning
+     (the tool needs the `docker` CLI at run time) but continue the install — docker
+     may be installed later, and the build/push step will surface its absence anyway.
 1. Resolve the absolute path to `pusher.py` (so the symlink survives regardless of
    the caller's CWD).
 2. `chmod +x pusher.py`.
@@ -202,7 +207,8 @@ Per project testing standards, both unit and integration coverage from the start
   sandbox — asserts the symlink is created/refreshed, the config is scaffolded only
   when absent, an existing config is preserved, and a second run is a no-op (idempotent).
   Also assert the `uv` preflight aborts cleanly (non-zero, no changes made) when `uv`
-  is absent from `$PATH`.
+  is absent from `$PATH`, and that a missing `docker` only warns (install still
+  completes, exit zero).
 
 ## Out of scope (YAGNI)
 
