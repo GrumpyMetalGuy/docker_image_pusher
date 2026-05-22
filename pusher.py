@@ -65,6 +65,23 @@ def read_version(path: Path) -> tuple[str, Version]:
     return lines[0], parse_version(lines[1])
 
 
+def config_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return Path(base) / "docker_image_pusher" / "config.yaml"
+
+
+def load_registry(path: Path) -> str:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Config not found: {path}. Run ./install.sh or create it with a 'registry:' key."
+        )
+    data = yaml.safe_load(path.read_text()) or {}
+    registry = data.get("registry")
+    if not isinstance(registry, str) or not registry.strip():
+        raise ValueError(f"{path} must contain a non-empty 'registry:' value")
+    return registry.strip()
+
+
 def main() -> int:
     raise NotImplementedError
 

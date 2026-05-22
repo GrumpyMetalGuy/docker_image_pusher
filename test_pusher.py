@@ -92,3 +92,35 @@ def test_read_version_non_semver(tmp_path):
     f.write_text("my-image\nnot-a-version\n")
     with pytest.raises(ValueError):
         read_version(f)
+
+
+from pusher import config_path, load_registry
+
+
+def test_config_path_uses_xdg(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert config_path() == tmp_path / "docker_image_pusher" / "config.yaml"
+
+
+def test_config_path_falls_back_to_home(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert config_path() == tmp_path / ".config" / "docker_image_pusher" / "config.yaml"
+
+
+def test_load_registry_reads_key(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("registry: registry.example.com/org\n")
+    assert load_registry(f) == "registry.example.com/org"
+
+
+def test_load_registry_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_registry(tmp_path / "nope.yaml")
+
+
+def test_load_registry_missing_key(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("something_else: 1\n")
+    with pytest.raises(ValueError):
+        load_registry(f)
