@@ -154,7 +154,8 @@ def main(ask=input) -> int:
         else:
             name, new_version = bootstrap_version(ask=ask)
 
-        refs = image_refs(registry, name, tag_list(new_version))
+        tags = tag_list(new_version)
+        refs = image_refs(registry, name, tags)
         if not confirm(refs, cwd, ask=ask):
             print("Aborted.")
             return 0
@@ -166,7 +167,7 @@ def main(ask=input) -> int:
             push_image(ref)
 
         write_version(version_file, name, new_version)
-        print(f"Pushed {name} {new_version}  ({', '.join(tag_list(new_version))})")
+        print(f"Pushed {name} {new_version}  ({', '.join(tags)})")
         return 0
     except (FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

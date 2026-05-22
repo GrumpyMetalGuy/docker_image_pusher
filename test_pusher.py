@@ -239,11 +239,6 @@ def test_confirm_no_default():
     assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted([""])) is False
 
 
-def _make_input(answers):
-    it = iter(answers)
-    return lambda _prompt: next(it)
-
-
 def _setup_config(monkeypatch, tmp_path, registry="reg.example.com/org"):
     cfg_home = tmp_path / "xdg"
     cfg = cfg_home / "docker_image_pusher" / "config.yaml"
@@ -264,7 +259,7 @@ def test_main_normal_run_builds_tags_pushes_and_writes_back(monkeypatch, tmp_pat
     monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
 
     # bump level = revision, then confirm = y
-    assert pusher_mod.main(ask=_make_input(["revision", "y"])) == 0
+    assert pusher_mod.main(ask=scripted(["revision", "y"])) == 0
 
     base = "reg.example.com/org/app"
     assert calls == [
@@ -290,7 +285,7 @@ def test_main_missing_dockerfile_errors_before_docker(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
 
-    assert pusher_mod.main(ask=_make_input([])) == 1
+    assert pusher_mod.main(ask=scripted([])) == 1
     assert calls == []
 
 
@@ -305,7 +300,7 @@ def test_main_missing_config_errors_before_docker(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
 
-    assert pusher_mod.main(ask=_make_input([])) == 1
+    assert pusher_mod.main(ask=scripted([])) == 1
     assert calls == []
 
 
@@ -321,7 +316,7 @@ def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
     monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
 
     # bootstrap: image name = "newapp", version = "" (=> default 0.1.0), confirm = y
-    assert pusher_mod.main(ask=_make_input(["newapp", "", "y"])) == 0
+    assert pusher_mod.main(ask=scripted(["newapp", "", "y"])) == 0
 
     base = "reg.example.com/org/newapp"
     # entered version used as-is (no bump) -> 0.1.0 tags
@@ -343,7 +338,7 @@ def test_main_decline_confirmation_does_nothing(monkeypatch, tmp_path):
     monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
 
     # bump level = minor, then decline confirm
-    assert pusher_mod.main(ask=_make_input(["minor", "n"])) == 0
+    assert pusher_mod.main(ask=scripted(["minor", "n"])) == 0
     assert calls == []  # nothing built or pushed
     assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # unchanged
 
@@ -362,7 +357,25 @@ def test_main_push_failure_leaves_version_unchanged(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pusher_mod, "_run", fake_run)
 
-    assert pusher_mod.main(ask=_make_input(["revision", "y"])) == 1
+    assert pusher_mod.main(ask=scripted(["revision", "y"])) == 1
+    assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # NOT bumped
+
+
+def test_main_build_failure_leaves_version_unchanged(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    def fake_run(cmd):
+        if cmd[:2] == ["docker", "build"]:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(pusher_mod, "_run", fake_run)
+
+    assert pusher_mod.main(ask=scripted(["revision", "y"])) == 1
     assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # NOT bumped
 
 
@@ -379,5 +392,5 @@ def test_main_bootstrap_push_failure_creates_no_file(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pusher_mod, "_run", fake_run)
 
-    assert pusher_mod.main(ask=_make_input(["newapp", "0.1.0", "y"])) == 1
+    assert pusher_mod.main(ask=scripted(["newapp", "0.1.0", "y"])) == 1
     assert not (proj / "VERSION.txt").exists()  # no half-written file
