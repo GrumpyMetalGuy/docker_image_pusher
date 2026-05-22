@@ -126,6 +126,20 @@ def test_load_registry_missing_key(tmp_path):
         load_registry(f)
 
 
+def test_load_registry_empty_string_value(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text('registry: ""\n')
+    with pytest.raises(ValueError):
+        load_registry(f)
+
+
+def test_load_registry_whitespace_only_value(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text('registry: "   "\n')
+    with pytest.raises(ValueError):
+        load_registry(f)
+
+
 from pusher import write_version
 
 
