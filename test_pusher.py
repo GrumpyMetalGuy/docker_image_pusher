@@ -20,3 +20,23 @@ def test_parse_version_strips_whitespace():
 def test_parse_version_rejects_invalid(bad):
     with pytest.raises(ValueError):
         parse_version(bad)
+
+
+from pusher import bump
+
+
+def test_bump_major():
+    assert bump(Version(1, 7, 3), "major") == Version(2, 0, 0)
+
+
+def test_bump_minor():
+    assert bump(Version(1, 7, 3), "minor") == Version(1, 8, 0)
+
+
+def test_bump_revision():
+    assert bump(Version(1, 7, 3), "revision") == Version(1, 7, 4)
+
+
+def test_bump_unknown_level():
+    with pytest.raises(ValueError):
+        bump(Version(1, 0, 0), "patch")

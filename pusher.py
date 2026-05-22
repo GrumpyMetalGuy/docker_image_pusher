@@ -38,6 +38,16 @@ def parse_version(s: str) -> Version:
     return Version(major, minor, patch)
 
 
+def bump(version: Version, level: str) -> Version:
+    if level == "major":
+        return Version(version.major + 1, 0, 0)
+    if level == "minor":
+        return Version(version.major, version.minor + 1, 0)
+    if level == "revision":
+        return Version(version.major, version.minor, version.patch + 1)
+    raise ValueError(f"Unknown bump level: {level!r}")
+
+
 def main() -> int:
     raise NotImplementedError
 
