@@ -66,6 +66,19 @@ def image_refs(registry: str, name: str, tags: list[str]) -> list[str]:
     return [f"{registry}/{name}:{tag}" for tag in tags]
 
 
+def registry_login_host(registry: str) -> str:
+    """The host to `docker login` for a given registry prefix.
+
+    Mirrors docker's reference parsing: the first path component is a registry
+    host only if it contains a '.' or ':' (or is 'localhost'); otherwise it is a
+    Docker Hub namespace, which authenticates against docker.io.
+    """
+    first = registry.split("/", 1)[0]
+    if "." in first or ":" in first or first == "localhost":
+        return first
+    return "docker.io"
+
+
 def read_version(path: Path) -> tuple[str, Version]:
     lines = [
         stripped
@@ -182,7 +195,19 @@ def main(ask=input) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as exc:
-        print(f"error: docker command failed (exit {exc.returncode})", file=sys.stderr)
+        action = exc.cmd[1] if len(exc.cmd) > 1 else "command"
+        print(
+            f"error: 'docker {action}' failed (exit {exc.returncode}); "
+            "see the docker output above.",
+            file=sys.stderr,
+        )
+        if action == "push":
+            host = registry_login_host(registry)
+            print(
+                f"hint: if this is an authentication error, run "
+                f"'docker login {host}' and try again.",
+                file=sys.stderr,
+            )
         return 1
     except (KeyboardInterrupt, EOFError):
         print("\nAborted.", file=sys.stderr)

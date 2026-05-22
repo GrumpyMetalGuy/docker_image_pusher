@@ -66,6 +66,30 @@ def test_image_refs_prefixes_registry_and_name():
     ]
 
 
+from pusher import registry_login_host
+
+
+def test_registry_login_host_private_registry_with_namespace():
+    assert registry_login_host("registry.example.com/org") == "registry.example.com"
+
+
+def test_registry_login_host_host_only():
+    assert registry_login_host("registry.example.com") == "registry.example.com"
+
+
+def test_registry_login_host_localhost_with_port():
+    assert registry_login_host("localhost:5000") == "localhost:5000"
+
+
+def test_registry_login_host_docker_hub_shorthand():
+    # A bare first component (no dot/colon) is a Docker Hub namespace, not a host.
+    assert registry_login_host("myuser") == "docker.io"
+
+
+def test_registry_login_host_docker_io():
+    assert registry_login_host("docker.io/library") == "docker.io"
+
+
 from pusher import read_version
 
 
@@ -380,6 +404,46 @@ def test_main_push_failure_leaves_version_unchanged(monkeypatch, tmp_path):
 
     assert pusher_mod.main(ask=scripted(["revision", "y"])) == 1
     assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # NOT bumped
+
+
+def test_main_push_failure_prints_login_hint(monkeypatch, tmp_path, capsys):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path, registry="registry.example.com/org")
+
+    def fake_run(cmd):
+        if cmd[:2] == ["docker", "push"]:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(pusher_mod, "_run", fake_run)
+
+    assert pusher_mod.main(ask=scripted(["revision", "y"])) == 1
+    err = capsys.readouterr().err
+    assert "push" in err  # names the failing step
+    assert "docker login registry.example.com" in err  # actionable hint with host
+
+
+def test_main_build_failure_has_no_login_hint(monkeypatch, tmp_path, capsys):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    def fake_run(cmd):
+        if cmd[:2] == ["docker", "build"]:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(pusher_mod, "_run", fake_run)
+
+    assert pusher_mod.main(ask=scripted(["revision", "y"])) == 1
+    err = capsys.readouterr().err
+    assert "build" in err  # names the failing step
+    assert "docker login" not in err  # auth hint is push-only
 
 
 def test_main_aborts_cleanly_on_interrupt(monkeypatch, tmp_path):
