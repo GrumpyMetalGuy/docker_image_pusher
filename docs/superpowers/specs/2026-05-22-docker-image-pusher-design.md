@@ -29,6 +29,9 @@ same tool works across every project without per-project configuration.
 - **Invocation:** `pusher.py` carries a `#!/usr/bin/env -S uv run --script` shebang,
   is made executable, and is symlinked into `~/.local/bin/dip`. The user then runs
   `dip` from any project folder. `uv` resolves the inline dependencies on demand.
+- **Install:** A repo `install.sh` performs the one-time setup (symlink + config
+  scaffold) so the steps are reproducible and auditable rather than copy-pasted by
+  hand. It is idempotent — safe to re-run after pulling updates.
 - **Versioning:** Semantic versioning `MAJOR.MINOR.PATCH`. Bump levels map as:
   `major` → `(M+1).0.0`, `minor` → `M.(N+1).0`, `revision` → `M.N.(P+1)`.
 - **Auth:** Assumes the user has already run `docker login`. No credentials are
@@ -40,10 +43,11 @@ same tool works across every project without per-project configuration.
 # Tool repo (this folder)
 docker_image_pusher/
 ├── pusher.py          # #!/usr/bin/env -S uv run --script  (PEP 723 dep: pyyaml)
+├── install.sh         # one-time installer (symlink + config scaffold)
 ├── test_pusher.py     # unit + mocked-docker tests
 └── docs/superpowers/specs/2026-05-22-docker-image-pusher-design.md
 
-# Installed once (manual, one-time)
+# Created by install.sh (one-time)
 ~/.local/bin/dip                              -> symlink to pusher.py (chmod +x)
 ~/.config/docker_image_pusher/config.yaml     # registry: registry.example.com[/namespace]
 
@@ -73,6 +77,38 @@ registry: registry.example.com
 
 - Single required key: `registry`. Used verbatim as the prefix; image refs are
   formed as `<registry>/<image_name>:<tag>`.
+
+## Installation (`install.sh`)
+
+A one-time, idempotent installer in the repo root. Run once after cloning:
+
+```bash
+./install.sh
+```
+
+Behavior:
+
+1. Resolve the absolute path to `pusher.py` (so the symlink survives regardless of
+   the caller's CWD).
+2. `chmod +x pusher.py`.
+3. Ensure `~/.local/bin` exists; create the symlink `~/.local/bin/dip -> <abs>/pusher.py`.
+   If the symlink already exists, refresh it to the current path (idempotent). If a
+   non-symlink file named `dip` is in the way, abort with a clear message rather than
+   clobbering it.
+4. Ensure `~/.config/docker_image_pusher/` exists (honoring `$XDG_CONFIG_HOME`).
+5. If `config.yaml` does not already exist there, scaffold a starter:
+   ```yaml
+   # Docker registry to push images to.
+   # Include a namespace/org if needed, e.g. registry.example.com/myorg
+   registry: registry.example.com
+   ```
+   An existing `config.yaml` is never overwritten.
+6. Check whether `~/.local/bin` is on `$PATH`; if not, print a warning with the line
+   to add to the user's shell rc.
+7. Print a short "done" summary: the symlink target, the config path, and a reminder
+   to edit `registry` and to be `docker login`'d.
+
+The installer does **not** require root and touches only the user's home directory.
 
 ## Tagging scheme
 
@@ -158,6 +194,9 @@ Per project testing standards, both unit and integration coverage from the start
     push failure → `VERSION.txt` unchanged, non-zero exit).
   - Confirmation declined → no docker invocations.
   - Keep CI-runnable: mock the `subprocess`/`docker` boundary, no real registry.
+- **Installer:** verify `install.sh` by running it in a temp `$HOME`/`$XDG_CONFIG_HOME`
+  sandbox — asserts the symlink is created/refreshed, the config is scaffolded only
+  when absent, an existing config is preserved, and a second run is a no-op (idempotent).
 
 ## Out of scope (YAGNI)
 
