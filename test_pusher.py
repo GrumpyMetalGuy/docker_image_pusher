@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 import pusher
@@ -178,3 +180,53 @@ def test_docker_wrappers_build_correct_commands(monkeypatch):
         ["docker", "tag", "reg/app:1.0.0", "reg/app:latest"],
         ["docker", "push", "reg/app:1.0.0"],
     ]
+
+
+from pusher import bootstrap_version, confirm, prompt_bump_level
+
+
+def scripted(answers):
+    """Return an `ask`-compatible callable that yields the given answers in order."""
+    it = iter(answers)
+
+    def ask(_prompt):
+        return next(it)
+
+    return ask
+
+
+def test_prompt_bump_level_accepts_valid():
+    assert prompt_bump_level(ask=scripted(["minor"])) == "minor"
+
+
+def test_prompt_bump_level_is_case_insensitive():
+    assert prompt_bump_level(ask=scripted(["REVISION"])) == "revision"
+
+
+def test_prompt_bump_level_reprompts_on_invalid():
+    assert prompt_bump_level(ask=scripted(["patch", "", "major"])) == "major"
+
+
+def test_bootstrap_version_uses_default(capsys):
+    name, version = bootstrap_version(ask=scripted(["my-image", ""]))
+    assert name == "my-image"
+    assert version == Version(0, 1, 0)
+
+
+def test_bootstrap_version_custom_value():
+    name, version = bootstrap_version(ask=scripted(["my-image", "2.3.4"]))
+    assert version == Version(2, 3, 4)
+
+
+def test_bootstrap_version_reprompts_empty_name_and_bad_version():
+    name, version = bootstrap_version(ask=scripted(["", "app", "x.y.z", "1.0.0"]))
+    assert name == "app"
+    assert version == Version(1, 0, 0)
+
+
+def test_confirm_yes():
+    assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted(["y"])) is True
+
+
+def test_confirm_no_default():
+    assert confirm(["reg/app:1.0.0"], Path("/proj"), ask=scripted([""])) is False

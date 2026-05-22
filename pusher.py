@@ -102,6 +102,38 @@ def push_image(ref: str) -> None:
     _run(["docker", "push", ref])
 
 
+def prompt_bump_level(ask=input) -> str:
+    while True:
+        answer = ask("Bump level (major / minor / revision): ").strip().lower()
+        if answer in ("major", "minor", "revision"):
+            return answer
+        print(f"Invalid choice: {answer!r}. Enter 'major', 'minor', or 'revision'.")
+
+
+def bootstrap_version(ask=input) -> tuple[str, Version]:
+    print("No VERSION.txt found in this directory — let's create one.")
+    name = ""
+    while not name:
+        name = ask("Image name: ").strip()
+        if not name:
+            print("Image name cannot be empty.")
+    while True:
+        raw = ask(
+            "Starting version — the version this NEW image will be built and pushed as [0.1.0]: "
+        ).strip()
+        try:
+            return name, parse_version(raw or "0.1.0")
+        except ValueError as exc:
+            print(exc)
+
+
+def confirm(refs: list[str], context: Path, ask=input) -> bool:
+    print(f"\nAbout to build {context} and push:")
+    for ref in refs:
+        print(f"  {ref}")
+    return ask("Proceed? [y/N]: ").strip().lower() in ("y", "yes")
+
+
 def main() -> int:
     raise NotImplementedError
 
