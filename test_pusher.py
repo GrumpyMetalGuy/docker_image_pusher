@@ -309,3 +309,26 @@ def test_main_missing_config_errors_before_docker(monkeypatch, tmp_path):
 
     assert pusher_mod.main() == 1
     assert calls == []
+
+
+def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    # NOTE: no VERSION.txt
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+    # bootstrap: image name = "newapp", version = "" (=> default 0.1.0), confirm = y
+    monkeypatch.setattr("builtins.input", _make_input(["newapp", "", "y"]))
+
+    assert pusher_mod.main() == 0
+
+    base = "reg.example.com/org/newapp"
+    # entered version used as-is (no bump) -> 0.1.0 tags
+    assert calls[0] == ["docker", "build", "-t", f"{base}:0.1.0", "."]
+    assert ["docker", "push", f"{base}:0.1.0"] in calls
+    assert ["docker", "push", f"{base}:latest"] in calls
+    assert (proj / "VERSION.txt").read_text() == "newapp\n0.1.0\n"
