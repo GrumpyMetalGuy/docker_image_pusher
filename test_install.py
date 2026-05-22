@@ -5,7 +5,9 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
-COREUTILS = ["bash", "mkdir", "ln", "chmod", "pwd", "cat"]
+# `bash` is required: subprocess with env= resolves the executable via env["PATH"].
+# install.sh's only external commands are mkdir/ln/chmod (cd/pwd are bash builtins).
+COREUTILS = ["bash", "mkdir", "ln", "chmod"]
 
 
 def _make_stub(path: Path) -> None:
@@ -120,3 +122,56 @@ def test_install_warns_without_docker(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "docker" in proc.stderr.lower()
     assert (home / ".local" / "bin" / "dip").is_symlink()  # install still completed
+
+
+def test_install_refuses_to_clobber_non_symlink(tmp_path):
+    home = tmp_path / "home"
+    xdg = home / ".config"
+    home.mkdir()
+    bindir = _bin_with(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    shutil.copy(REPO / "install.sh", repo / "install.sh")
+    shutil.copy(REPO / "pusher.py", repo / "pusher.py")
+    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(xdg), "PATH": str(bindir)}
+
+    # A regular (non-symlink) file already sits where `dip` would be linked.
+    link = home / ".local" / "bin" / "dip"
+    link.parent.mkdir(parents=True)
+    link.write_text("i am not a symlink\n")
+
+    proc = subprocess.run(
+        ["bash", str(repo / "install.sh")], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0
+    assert "not a symlink" in proc.stderr
+    assert not link.is_symlink()
+    assert link.read_text() == "i am not a symlink\n"  # left untouched
+    # Aborted before config scaffolding.
+    assert not (xdg / "docker_image_pusher" / "config.yaml").exists()
+
+
+def test_install_works_when_invoked_without_path_separator(tmp_path):
+    # Invoked as `bash install.sh` from inside the repo -> $0 has no "/",
+    # so script_dir must fall back to the current working directory.
+    home = tmp_path / "home"
+    xdg = home / ".config"
+    home.mkdir()
+    bindir = _bin_with(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    shutil.copy(REPO / "install.sh", repo / "install.sh")
+    shutil.copy(REPO / "pusher.py", repo / "pusher.py")
+    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(xdg), "PATH": str(bindir)}
+
+    proc = subprocess.run(
+        ["bash", "install.sh"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    link = home / ".local" / "bin" / "dip"
+    assert link.is_symlink()
+    assert os.readlink(link) == str(repo / "pusher.py")

@@ -15,7 +15,11 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 # --- Resolve paths (bash builtins only) -------------------------------------
-script_dir="$(cd "${0%/*}" 2>/dev/null && pwd)"
+src="${BASH_SOURCE[0]}"
+case "${src}" in
+    */*) script_dir="$(cd "${src%/*}" && pwd)" ;;
+    *) script_dir="$(pwd)" ;;
+esac
 pusher="${script_dir}/pusher.py"
 if [ ! -f "${pusher}" ]; then
     echo "error: pusher.py not found next to install.sh (${pusher})." >&2
