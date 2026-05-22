@@ -139,7 +139,7 @@ def confirm(refs: list[str], context: Path, ask=input) -> bool:
     return ask("Proceed? [y/N]: ").strip().lower() in ("y", "yes")
 
 
-def main() -> int:
+def main(ask=input) -> int:
     cwd = Path.cwd()
     version_file = cwd / "VERSION.txt"
     dockerfile = cwd / "Dockerfile"
@@ -150,12 +150,12 @@ def main() -> int:
 
         if version_file.exists():
             name, current = read_version(version_file)
-            new_version = bump(current, prompt_bump_level(ask=input))
+            new_version = bump(current, prompt_bump_level(ask=ask))
         else:
-            name, new_version = bootstrap_version(ask=input)
+            name, new_version = bootstrap_version(ask=ask)
 
         refs = image_refs(registry, name, tag_list(new_version))
-        if not confirm(refs, cwd, ask=input):
+        if not confirm(refs, cwd, ask=ask):
             print("Aborted.")
             return 0
 
