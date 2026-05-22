@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -332,3 +333,58 @@ def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
     assert ["docker", "push", f"{base}:0.1.0"] in calls
     assert ["docker", "push", f"{base}:latest"] in calls
     assert (proj / "VERSION.txt").read_text() == "newapp\n0.1.0\n"
+
+
+def test_main_decline_confirmation_does_nothing(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+    # bump level = minor, then decline confirm
+    monkeypatch.setattr("builtins.input", _make_input(["minor", "n"]))
+
+    assert pusher_mod.main() == 0
+    assert calls == []  # nothing built or pushed
+    assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # unchanged
+
+
+def test_main_push_failure_leaves_version_unchanged(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.0.0\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    def fake_run(cmd):
+        if cmd[:2] == ["docker", "push"]:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(pusher_mod, "_run", fake_run)
+    monkeypatch.setattr("builtins.input", _make_input(["revision", "y"]))
+
+    assert pusher_mod.main() == 1
+    assert (proj / "VERSION.txt").read_text() == "app\n1.0.0\n"  # NOT bumped
+
+
+def test_main_bootstrap_push_failure_creates_no_file(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    def fake_run(cmd):
+        if cmd[:2] == ["docker", "push"]:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(pusher_mod, "_run", fake_run)
+    monkeypatch.setattr("builtins.input", _make_input(["newapp", "0.1.0", "y"]))
+
+    assert pusher_mod.main() == 1
+    assert not (proj / "VERSION.txt").exists()  # no half-written file
