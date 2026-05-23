@@ -28,8 +28,11 @@ dip
 ```
 
 - If `VERSION.txt` exists (image name then `MAJOR.MINOR.PATCH`, each on its own line;
-  `#` comment lines are ignored), you are prompted for a bump level
-  (major / minor / revision).
+  `#` comment lines are ignored), you are prompted to choose the next version: a bump
+  level (major / minor / revision) or, if a version is found in a project file
+  (`package.json`, `pyproject.toml`, etc.), that version as an extra option. Detected
+  options that aren't newer than the current version are tagged `(same as current)` /
+  `(older than current)` but can still be chosen.
 - If `VERSION.txt` is missing, `dip` looks for a version in common project files
   (`package.json`, `pyproject.toml`, `Cargo.toml`, `composer.json`, `*.csproj`,
   `pom.xml`) and offers any it finds — letting you pick when there is more than one.

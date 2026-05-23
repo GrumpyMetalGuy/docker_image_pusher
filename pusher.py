@@ -333,22 +333,49 @@ def push_image(ref: str) -> None:
 BUMP_LEVELS = ("major", "minor", "revision")
 
 
-def prompt_bump_level(name: str, current: Version, ask=input) -> str:
+def _candidate_annotation(candidate: VersionCandidate, current: Version) -> str:
+    notes = []
+    if candidate.raw != str(candidate.version):
+        notes.append(f'from "{candidate.raw}"')
+    if candidate.version == current:
+        notes.append("same as current")
+    elif candidate.version < current:
+        notes.append("older than current")
+    return f"  ({', '.join(notes)})" if notes else ""
+
+
+def prompt_new_version(
+    name: str,
+    current: Version,
+    candidates: list[VersionCandidate],
+    ask=input,
+) -> Version:
+    """Choose the next version: a semver bump or a detected external version."""
     default = "revision"
     print(f"Bumping '{name}' (current version {current})")
-    print("Select bump level:")
+    print("Select version:")
+    options: dict[str, Version] = {}
     for i, level in enumerate(BUMP_LEVELS, start=1):
         marker = "  [default]" if level == default else ""
         print(f"  {i}) {level:<9}{current} -> {bump(current, level)}{marker}")
-    choices = {str(i): level for i, level in enumerate(BUMP_LEVELS, start=1)}
-    choices.update({level: level for level in BUMP_LEVELS})
+        options[str(i)] = bump(current, level)
+    width = max((len(c.source) for c in candidates), default=0)
+    for j, c in enumerate(candidates, start=len(BUMP_LEVELS) + 1):
+        print(
+            f"  {j}) {c.source:<{width}}  {c.version}{_candidate_annotation(c, current)}"
+        )
+        options[str(j)] = c.version
+    words = {level: bump(current, level) for level in BUMP_LEVELS}
+    last = len(BUMP_LEVELS) + len(candidates)
     while True:
         answer = ask(f"Choice [{BUMP_LEVELS.index(default) + 1}]: ").strip().lower()
         if not answer:
-            return default
-        if answer in choices:
-            return choices[answer]
-        print(f"Invalid choice: {answer!r}. Enter 1, 2, or 3.")
+            return bump(current, default)
+        if answer in options:
+            return options[answer]
+        if answer in words:
+            return words[answer]
+        print(f"Invalid choice: {answer!r}. Enter a number from 1 to {last}.")
 
 
 def prompt_version_candidate(
@@ -427,7 +454,8 @@ def main(ask=input) -> int:
 
         if version_file.exists():
             name, current = read_version(version_file)
-            new_version = bump(current, prompt_bump_level(name, current, ask=ask))
+            candidates = detect_version_candidates(cwd)
+            new_version = prompt_new_version(name, current, candidates, ask=ask)
         else:
             name, new_version = bootstrap_version(cwd, ask=ask)
 

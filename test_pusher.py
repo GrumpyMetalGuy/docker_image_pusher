@@ -230,7 +230,7 @@ def test_docker_wrappers_build_correct_commands(monkeypatch):
     ]
 
 
-from pusher import bootstrap_version, confirm, prompt_bump_level
+from pusher import VersionCandidate, bootstrap_version, confirm, prompt_new_version
 
 
 def scripted(answers):
@@ -243,46 +243,88 @@ def scripted(answers):
     return ask
 
 
-def test_prompt_bump_level_accepts_words():
-    assert (
-        prompt_bump_level("app", Version(1, 2, 3), ask=scripted(["minor"])) == "minor"
-    )
+def test_prompt_new_version_accepts_words():
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), [], ask=scripted(["minor"])
+    ) == Version(1, 3, 0)
 
 
-def test_prompt_bump_level_is_case_insensitive():
-    assert (
-        prompt_bump_level("app", Version(1, 2, 3), ask=scripted(["REVISION"]))
-        == "revision"
-    )
+def test_prompt_new_version_is_case_insensitive():
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), [], ask=scripted(["REVISION"])
+    ) == Version(1, 2, 4)
 
 
-def test_prompt_bump_level_accepts_numbers():
-    def ask_one(n):
-        return prompt_bump_level("app", Version(1, 2, 3), ask=scripted([n]))
+def test_prompt_new_version_accepts_numbers():
+    def pick(n):
+        return prompt_new_version("app", Version(1, 2, 3), [], ask=scripted([n]))
 
-    assert ask_one("1") == "major"
-    assert ask_one("2") == "minor"
-    assert ask_one("3") == "revision"
-
-
-def test_prompt_bump_level_empty_uses_revision_default():
-    assert prompt_bump_level("app", Version(1, 2, 3), ask=scripted([""])) == "revision"
+    assert pick("1") == Version(2, 0, 0)
+    assert pick("2") == Version(1, 3, 0)
+    assert pick("3") == Version(1, 2, 4)
 
 
-def test_prompt_bump_level_reprompts_on_invalid():
-    assert (
-        prompt_bump_level(
-            "app", Version(1, 2, 3), ask=scripted(["patch", "9", "major"])
-        )
-        == "major"
-    )
+def test_prompt_new_version_empty_uses_revision_default():
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), [], ask=scripted([""])
+    ) == Version(1, 2, 4)
 
 
-def test_prompt_bump_level_shows_image_name_header(capsys):
-    prompt_bump_level("my-image", Version(1, 2, 3), ask=scripted([""]))
+def test_prompt_new_version_reprompts_on_invalid():
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), [], ask=scripted(["patch", "9", "major"])
+    ) == Version(2, 0, 0)
+
+
+def test_prompt_new_version_shows_image_name_header(capsys):
+    prompt_new_version("my-image", Version(1, 2, 3), [], ask=scripted([""]))
     out = capsys.readouterr().out
     assert "my-image" in out
     assert "1.2.3" in out
+
+
+def test_prompt_new_version_external_candidate_returns_its_version():
+    cands = [VersionCandidate("package.json", Version(1, 5, 0), "1.5.0", "app")]
+    # options 1-3 are bump levels, 4 is the detected candidate
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), cands, ask=scripted(["4"])
+    ) == Version(1, 5, 0)
+
+
+def test_prompt_new_version_multiple_candidates():
+    cands = [
+        VersionCandidate("package.json", Version(1, 5, 0), "1.5.0", "app"),
+        VersionCandidate("Cargo.toml", Version(2, 0, 0), "2.0.0", "app"),
+    ]
+    assert prompt_new_version(
+        "app", Version(1, 2, 3), cands, ask=scripted(["5"])
+    ) == Version(2, 0, 0)
+
+
+def test_prompt_new_version_annotates_same_as_current(capsys):
+    cands = [VersionCandidate("Cargo.toml", Version(1, 2, 3), "1.2.3", "app")]
+    prompt_new_version("app", Version(1, 2, 3), cands, ask=scripted([""]))
+    assert "same as current" in capsys.readouterr().out
+
+
+def test_prompt_new_version_annotates_older_than_current(capsys):
+    cands = [VersionCandidate("Cargo.toml", Version(1, 0, 0), "1.0.0", "app")]
+    prompt_new_version("app", Version(1, 2, 3), cands, ask=scripted([""]))
+    assert "older than current" in capsys.readouterr().out
+
+
+def test_prompt_new_version_newer_candidate_has_no_relation_annotation(capsys):
+    cands = [VersionCandidate("Cargo.toml", Version(9, 0, 0), "9.0.0", "app")]
+    prompt_new_version("app", Version(1, 2, 3), cands, ask=scripted([""]))
+    out = capsys.readouterr().out
+    assert "same as current" not in out
+    assert "older than current" not in out
+
+
+def test_prompt_new_version_shows_coerced_raw(capsys):
+    cands = [VersionCandidate("composer.json", Version(1, 2, 0), "1.2", "app")]
+    prompt_new_version("app", Version(1, 2, 3), cands, ask=scripted([""]))
+    assert 'from "1.2"' in capsys.readouterr().out
 
 
 def test_bootstrap_version_uses_default(tmp_path):
@@ -426,6 +468,26 @@ def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
     assert ["docker", "push", f"{base}:0.1.0"] in calls
     assert ["docker", "push", f"{base}:latest"] in calls
     assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}newapp\n0.1.0\n"
+
+
+def test_main_bump_picks_external_version(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "VERSION.txt").write_text("app\n1.2.3\n")
+    (proj / "package.json").write_text('{"name": "app", "version": "1.5.0"}')
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+
+    # menu: 1-3 are bump levels, 4 = package.json (1.5.0); then confirm
+    assert pusher_mod.main(ask=scripted(["4", "y"])) == 0
+
+    base = "reg.example.com/org/app"
+    assert calls[0] == ["docker", "build", "-t", f"{base}:1.5.0", "."]
+    assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}app\n1.5.0\n"
 
 
 def test_main_bootstrap_uses_detected_version(monkeypatch, tmp_path):
@@ -783,7 +845,7 @@ def test_detect_version_candidates_orders_by_priority(tmp_path):
     assert sources == ["package.json", "pyproject.toml", "Cargo.toml", "pom.xml"]
 
 
-from pusher import VersionCandidate, prompt_version_candidate
+from pusher import prompt_version_candidate
 
 _CANDS = [
     VersionCandidate("package.json", Version(1, 2, 3), "1.2.3", "widget"),
