@@ -243,16 +243,32 @@ def scripted(answers):
     return ask
 
 
-def test_prompt_bump_level_accepts_valid():
-    assert prompt_bump_level(ask=scripted(["minor"])) == "minor"
+def test_prompt_bump_level_accepts_words():
+    assert prompt_bump_level(Version(1, 2, 3), ask=scripted(["minor"])) == "minor"
 
 
 def test_prompt_bump_level_is_case_insensitive():
-    assert prompt_bump_level(ask=scripted(["REVISION"])) == "revision"
+    assert prompt_bump_level(Version(1, 2, 3), ask=scripted(["REVISION"])) == "revision"
+
+
+def test_prompt_bump_level_accepts_numbers():
+    def ask_one(n):
+        return prompt_bump_level(Version(1, 2, 3), ask=scripted([n]))
+
+    assert ask_one("1") == "major"
+    assert ask_one("2") == "minor"
+    assert ask_one("3") == "revision"
+
+
+def test_prompt_bump_level_empty_uses_revision_default():
+    assert prompt_bump_level(Version(1, 2, 3), ask=scripted([""])) == "revision"
 
 
 def test_prompt_bump_level_reprompts_on_invalid():
-    assert prompt_bump_level(ask=scripted(["patch", "", "major"])) == "major"
+    assert (
+        prompt_bump_level(Version(1, 2, 3), ask=scripted(["patch", "9", "major"]))
+        == "major"
+    )
 
 
 def test_bootstrap_version_uses_default():

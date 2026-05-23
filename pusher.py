@@ -129,12 +129,24 @@ def push_image(ref: str) -> None:
     _run(["docker", "push", ref])
 
 
-def prompt_bump_level(ask=input) -> str:
+BUMP_LEVELS = ("major", "minor", "revision")
+
+
+def prompt_bump_level(current: Version, ask=input) -> str:
+    default = "revision"
+    print("Select bump level:")
+    for i, level in enumerate(BUMP_LEVELS, start=1):
+        marker = "  [default]" if level == default else ""
+        print(f"  {i}) {level:<9}{current} -> {bump(current, level)}{marker}")
+    choices = {str(i): level for i, level in enumerate(BUMP_LEVELS, start=1)}
+    choices.update({level: level for level in BUMP_LEVELS})
     while True:
-        answer = ask("Bump level (major / minor / revision): ").strip().lower()
-        if answer in ("major", "minor", "revision"):
-            return answer
-        print(f"Invalid choice: {answer!r}. Enter 'major', 'minor', or 'revision'.")
+        answer = ask(f"Choice [{BUMP_LEVELS.index(default) + 1}]: ").strip().lower()
+        if not answer:
+            return default
+        if answer in choices:
+            return choices[answer]
+        print(f"Invalid choice: {answer!r}. Enter 1, 2, or 3.")
 
 
 def bootstrap_version(ask=input) -> tuple[str, Version]:
@@ -172,7 +184,7 @@ def main(ask=input) -> int:
 
         if version_file.exists():
             name, current = read_version(version_file)
-            new_version = bump(current, prompt_bump_level(ask=ask))
+            new_version = bump(current, prompt_bump_level(current, ask=ask))
         else:
             name, new_version = bootstrap_version(ask=ask)
 
