@@ -132,8 +132,9 @@ def push_image(ref: str) -> None:
 BUMP_LEVELS = ("major", "minor", "revision")
 
 
-def prompt_bump_level(current: Version, ask=input) -> str:
+def prompt_bump_level(name: str, current: Version, ask=input) -> str:
     default = "revision"
+    print(f"Bumping '{name}' (current version {current})")
     print("Select bump level:")
     for i, level in enumerate(BUMP_LEVELS, start=1):
         marker = "  [default]" if level == default else ""
@@ -184,7 +185,7 @@ def main(ask=input) -> int:
 
         if version_file.exists():
             name, current = read_version(version_file)
-            new_version = bump(current, prompt_bump_level(current, ask=ask))
+            new_version = bump(current, prompt_bump_level(name, current, ask=ask))
         else:
             name, new_version = bootstrap_version(ask=ask)
 

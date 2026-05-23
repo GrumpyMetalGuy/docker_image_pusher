@@ -244,16 +244,21 @@ def scripted(answers):
 
 
 def test_prompt_bump_level_accepts_words():
-    assert prompt_bump_level(Version(1, 2, 3), ask=scripted(["minor"])) == "minor"
+    assert (
+        prompt_bump_level("app", Version(1, 2, 3), ask=scripted(["minor"])) == "minor"
+    )
 
 
 def test_prompt_bump_level_is_case_insensitive():
-    assert prompt_bump_level(Version(1, 2, 3), ask=scripted(["REVISION"])) == "revision"
+    assert (
+        prompt_bump_level("app", Version(1, 2, 3), ask=scripted(["REVISION"]))
+        == "revision"
+    )
 
 
 def test_prompt_bump_level_accepts_numbers():
     def ask_one(n):
-        return prompt_bump_level(Version(1, 2, 3), ask=scripted([n]))
+        return prompt_bump_level("app", Version(1, 2, 3), ask=scripted([n]))
 
     assert ask_one("1") == "major"
     assert ask_one("2") == "minor"
@@ -261,14 +266,23 @@ def test_prompt_bump_level_accepts_numbers():
 
 
 def test_prompt_bump_level_empty_uses_revision_default():
-    assert prompt_bump_level(Version(1, 2, 3), ask=scripted([""])) == "revision"
+    assert prompt_bump_level("app", Version(1, 2, 3), ask=scripted([""])) == "revision"
 
 
 def test_prompt_bump_level_reprompts_on_invalid():
     assert (
-        prompt_bump_level(Version(1, 2, 3), ask=scripted(["patch", "9", "major"]))
+        prompt_bump_level(
+            "app", Version(1, 2, 3), ask=scripted(["patch", "9", "major"])
+        )
         == "major"
     )
+
+
+def test_prompt_bump_level_shows_image_name_header(capsys):
+    prompt_bump_level("my-image", Version(1, 2, 3), ask=scripted([""]))
+    out = capsys.readouterr().out
+    assert "my-image" in out
+    assert "1.2.3" in out
 
 
 def test_bootstrap_version_uses_default():
