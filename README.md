@@ -30,8 +30,13 @@ dip
 - If `VERSION.txt` exists (image name then `MAJOR.MINOR.PATCH`, each on its own line;
   `#` comment lines are ignored), you are prompted for a bump level
   (major / minor / revision).
-- If `VERSION.txt` is missing, you are prompted for an image name and starting version
-  (default `0.1.0`); that version is built and pushed as-is and the file is created.
+- If `VERSION.txt` is missing, `dip` looks for a version in common project files
+  (`package.json`, `pyproject.toml`, `Cargo.toml`, `composer.json`, `*.csproj`,
+  `pom.xml`) and offers any it finds — letting you pick when there is more than one.
+  The project name from those files prefills the image-name prompt. You can always
+  enter a version by hand instead (default `0.1.0`). That version is built and pushed
+  as-is and the file is created. Odd version strings are coerced to `MAJOR.MINOR.PATCH`
+  (e.g. `1.2` → `1.2.0`, `1.2.3-beta` → `1.2.3`).
 
 `dip` writes (and rewrites) `VERSION.txt` with a short comment header identifying the
 tool, e.g.:

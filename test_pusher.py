@@ -285,21 +285,48 @@ def test_prompt_bump_level_shows_image_name_header(capsys):
     assert "1.2.3" in out
 
 
-def test_bootstrap_version_uses_default():
-    name, version = bootstrap_version(ask=scripted(["my-image", ""]))
+def test_bootstrap_version_uses_default(tmp_path):
+    name, version = bootstrap_version(tmp_path, ask=scripted(["my-image", ""]))
     assert name == "my-image"
     assert version == Version(0, 1, 0)
 
 
-def test_bootstrap_version_custom_value():
-    name, version = bootstrap_version(ask=scripted(["my-image", "2.3.4"]))
+def test_bootstrap_version_custom_value(tmp_path):
+    name, version = bootstrap_version(tmp_path, ask=scripted(["my-image", "2.3.4"]))
     assert version == Version(2, 3, 4)
 
 
-def test_bootstrap_version_reprompts_empty_name_and_bad_version():
-    name, version = bootstrap_version(ask=scripted(["", "app", "x.y.z", "1.0.0"]))
+def test_bootstrap_version_reprompts_empty_name_and_bad_version(tmp_path):
+    name, version = bootstrap_version(
+        tmp_path, ask=scripted(["", "app", "x.y.z", "1.0.0"])
+    )
     assert name == "app"
     assert version == Version(1, 0, 0)
+
+
+def test_bootstrap_version_uses_detected_candidate(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"name": "@acme/widget", "version": "1.2.3"}'
+    )
+    # name prompt accepts default (empty), version picker accepts default (empty)
+    name, version = bootstrap_version(tmp_path, ask=scripted(["", ""]))
+    assert name == "widget"
+    assert version == Version(1, 2, 3)
+
+
+def test_bootstrap_version_detected_name_can_be_overridden(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "widget", "version": "1.2.3"}')
+    name, version = bootstrap_version(tmp_path, ask=scripted(["custom", ""]))
+    assert name == "custom"
+    assert version == Version(1, 2, 3)
+
+
+def test_bootstrap_version_manual_version_via_picker(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "widget", "version": "1.2.3"}')
+    # name default, picker option 2 = "enter a different version", then type it
+    name, version = bootstrap_version(tmp_path, ask=scripted(["", "2", "5.6.7"]))
+    assert name == "widget"
+    assert version == Version(5, 6, 7)
 
 
 def test_confirm_yes():
@@ -399,6 +426,26 @@ def test_main_bootstrap_creates_file_after_push(monkeypatch, tmp_path):
     assert ["docker", "push", f"{base}:0.1.0"] in calls
     assert ["docker", "push", f"{base}:latest"] in calls
     assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}newapp\n0.1.0\n"
+
+
+def test_main_bootstrap_uses_detected_version(monkeypatch, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "Dockerfile").write_text("FROM scratch\n")
+    (proj / "package.json").write_text('{"name": "acme", "version": "1.2.3"}')
+    # NOTE: no VERSION.txt
+    monkeypatch.chdir(proj)
+    _setup_config(monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(pusher_mod, "_run", lambda cmd: calls.append(cmd))
+
+    # name default (empty), detected-version default (empty), confirm = y
+    assert pusher_mod.main(ask=scripted(["", "", "y"])) == 0
+
+    base = "reg.example.com/org/acme"
+    assert calls[0] == ["docker", "build", "-t", f"{base}:1.2.3", "."]
+    assert (proj / "VERSION.txt").read_text() == f"{VERSION_FILE_HEADER}acme\n1.2.3\n"
 
 
 def test_main_decline_confirmation_does_nothing(monkeypatch, tmp_path):
@@ -528,3 +575,242 @@ def test_main_bootstrap_push_failure_creates_no_file(monkeypatch, tmp_path):
 
     assert pusher_mod.main(ask=scripted(["newapp", "0.1.0", "y"])) == 1
     assert not (proj / "VERSION.txt").exists()  # no half-written file
+
+
+from pusher import coerce_version, normalize_image_name
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("1.2.3", Version(1, 2, 3)),
+        ("1.2", Version(1, 2, 0)),
+        ("1", Version(1, 0, 0)),
+        ("  1.2.3  ", Version(1, 2, 3)),
+        ("v1.4.0", Version(1, 4, 0)),
+        ("1.2.3-beta", Version(1, 2, 3)),
+        ("1.2.3-beta.1", Version(1, 2, 3)),
+        ("1.0.0-SNAPSHOT", Version(1, 0, 0)),
+        ("1.2.3+build5", Version(1, 2, 3)),
+        ("2.0.0.4", Version(2, 0, 0)),
+        ("1.2.3a1", Version(1, 2, 3)),
+        ("1.2.3.dev0", Version(1, 2, 3)),
+    ],
+)
+def test_coerce_version_coerces(raw, expected):
+    assert coerce_version(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "latest", "abc", "v", "-1.0.0"])
+def test_coerce_version_returns_none_for_unparseable(raw):
+    assert coerce_version(raw) is None
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("my-app", "my-app"),
+        ("  my-app  ", "my-app"),
+        ("@scope/pkg", "pkg"),
+        ("vendor/pkg", "pkg"),
+        ("vendor/sub/pkg", "pkg"),
+    ],
+)
+def test_normalize_image_name(raw, expected):
+    assert normalize_image_name(raw) == expected
+
+
+from pusher import (
+    detect_cargo,
+    detect_composer_json,
+    detect_csproj,
+    detect_package_json,
+    detect_pom,
+    detect_pyproject,
+)
+
+
+def test_detect_package_json(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"name": "@acme/widget", "version": "1.2.3"}'
+    )
+    [c] = detect_package_json(tmp_path)
+    assert c.source == "package.json"
+    assert c.version == Version(1, 2, 3)
+    assert c.raw == "1.2.3"
+    assert c.name == "widget"
+
+
+def test_detect_package_json_absent(tmp_path):
+    assert detect_package_json(tmp_path) == []
+
+
+def test_detect_package_json_malformed_is_skipped(tmp_path):
+    (tmp_path / "package.json").write_text("{not valid json")
+    assert detect_package_json(tmp_path) == []
+
+
+def test_detect_package_json_no_version(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "widget"}')
+    assert detect_package_json(tmp_path) == []
+
+
+def test_detect_composer_json(tmp_path):
+    (tmp_path / "composer.json").write_text('{"name": "vendor/pkg", "version": "2.0"}')
+    [c] = detect_composer_json(tmp_path)
+    assert c.source == "composer.json"
+    assert c.version == Version(2, 0, 0)
+    assert c.name == "pkg"
+
+
+def test_detect_pyproject_pep621(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "my-tool"\nversion = "3.4.5"\n'
+    )
+    [c] = detect_pyproject(tmp_path)
+    assert c.source == "pyproject.toml"
+    assert c.version == Version(3, 4, 5)
+    assert c.name == "my-tool"
+
+
+def test_detect_pyproject_poetry(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.poetry]\nname = "poet"\nversion = "1.0.0"\n'
+    )
+    [c] = detect_pyproject(tmp_path)
+    assert c.version == Version(1, 0, 0)
+    assert c.name == "poet"
+
+
+def test_detect_pyproject_dynamic_version_skipped(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndynamic = ["version"]\n'
+    )
+    assert detect_pyproject(tmp_path) == []
+
+
+def test_detect_pyproject_malformed_is_skipped(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("this is = = not toml")
+    assert detect_pyproject(tmp_path) == []
+
+
+def test_detect_cargo(tmp_path):
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "crate-thing"\nversion = "0.9.1"\n'
+    )
+    [c] = detect_cargo(tmp_path)
+    assert c.version == Version(0, 9, 1)
+    assert c.name == "crate-thing"
+
+
+def test_detect_csproj_with_version_and_packageid(tmp_path):
+    (tmp_path / "App.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk">\n'
+        "  <PropertyGroup>\n"
+        "    <Version>2.1.0</Version>\n"
+        "    <PackageId>MyApp</PackageId>\n"
+        "  </PropertyGroup>\n"
+        "</Project>\n"
+    )
+    [c] = detect_csproj(tmp_path)
+    assert c.source == "App.csproj"
+    assert c.version == Version(2, 1, 0)
+    assert c.name == "MyApp"
+
+
+def test_detect_csproj_name_falls_back_to_filename(tmp_path):
+    (tmp_path / "Service.csproj").write_text(
+        "<Project><PropertyGroup><Version>1.0.0</Version></PropertyGroup></Project>"
+    )
+    [c] = detect_csproj(tmp_path)
+    assert c.name == "Service"
+
+
+def test_detect_csproj_multiple_files_sorted(tmp_path):
+    (tmp_path / "B.csproj").write_text(
+        "<Project><PropertyGroup><Version>2.0.0</Version></PropertyGroup></Project>"
+    )
+    (tmp_path / "A.csproj").write_text(
+        "<Project><PropertyGroup><Version>1.0.0</Version></PropertyGroup></Project>"
+    )
+    sources = [c.source for c in detect_csproj(tmp_path)]
+    assert sources == ["A.csproj", "B.csproj"]
+
+
+def test_detect_pom_with_namespace(tmp_path):
+    (tmp_path / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+        "  <artifactId>my-service</artifactId>\n"
+        "  <version>4.5.6</version>\n"
+        "  <dependencies>\n"
+        "    <dependency><artifactId>dep</artifactId><version>9.9.9</version></dependency>\n"
+        "  </dependencies>\n"
+        "</project>\n"
+    )
+    [c] = detect_pom(tmp_path)
+    assert c.source == "pom.xml"
+    assert c.version == Version(4, 5, 6)  # project version, not the dependency's
+    assert c.name == "my-service"
+
+
+def test_detect_pom_inherited_version_skipped(tmp_path):
+    (tmp_path / "pom.xml").write_text(
+        "<project>\n"
+        "  <parent><version>1.0.0</version></parent>\n"
+        "  <artifactId>child</artifactId>\n"
+        "</project>\n"
+    )
+    assert detect_pom(tmp_path) == []  # no project-level version of its own
+
+
+from pusher import detect_version_candidates
+
+
+def test_detect_version_candidates_empty_dir(tmp_path):
+    assert detect_version_candidates(tmp_path) == []
+
+
+def test_detect_version_candidates_orders_by_priority(tmp_path):
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "c"\nversion = "3.0.0"\n')
+    (tmp_path / "package.json").write_text('{"name": "n", "version": "1.0.0"}')
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "p"\nversion = "2.0.0"\n'
+    )
+    (tmp_path / "pom.xml").write_text(
+        "<project><artifactId>m</artifactId><version>4.0.0</version></project>"
+    )
+    sources = [c.source for c in detect_version_candidates(tmp_path)]
+    assert sources == ["package.json", "pyproject.toml", "Cargo.toml", "pom.xml"]
+
+
+from pusher import VersionCandidate, prompt_version_candidate
+
+_CANDS = [
+    VersionCandidate("package.json", Version(1, 2, 3), "1.2.3", "widget"),
+    VersionCandidate("pyproject.toml", Version(1, 2, 0), "1.2", "widget"),
+]
+
+
+def test_prompt_version_candidate_picks_by_number():
+    assert prompt_version_candidate(_CANDS, ask=scripted(["2"])) is _CANDS[1]
+
+
+def test_prompt_version_candidate_empty_uses_first_default():
+    assert prompt_version_candidate(_CANDS, ask=scripted([""])) is _CANDS[0]
+
+
+def test_prompt_version_candidate_manual_option_returns_none():
+    # the option after the candidates ("enter a different version")
+    assert prompt_version_candidate(_CANDS, ask=scripted(["3"])) is None
+
+
+def test_prompt_version_candidate_reprompts_on_invalid():
+    assert prompt_version_candidate(_CANDS, ask=scripted(["x", "9", "1"])) is _CANDS[0]
+
+
+def test_prompt_version_candidate_shows_source_and_coerced_raw(capsys):
+    prompt_version_candidate(_CANDS, ask=scripted([""]))
+    out = capsys.readouterr().out
+    assert "package.json" in out
+    assert "pyproject.toml" in out
+    assert "1.2" in out  # the coerced raw value is surfaced
